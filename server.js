@@ -65,55 +65,112 @@ function extrairCaixaPosicao(observacoes) {
 }
 
 /**
- * Busca a senha descriptografada na API do RBX
+ * Busca dados completos via API do RBX (Autenticações + Clientes)
+ * Funciona 100% mesmo quando o MySQL remoto estiver bloqueado pelo firewall na Cloud
  */
-async function buscarSenhaApiRbx(url, apiKey, contrato) {
+async function buscarDadosApiRbx(url, apiKey, contrato) {
   if (!url || !apiKey) return null;
 
   const contratoSanitizado = contrato.toString().replace(/[^a-zA-Z0-9_-]/g, '');
 
-  const payload = {
-    ConsultaAutenticacaoSenha: {
-      Autenticacao: {
-        ChaveIntegracao: apiKey
-      },
-      Filtro: `Contrato = '${contratoSanitizado}'`
-    }
-  };
-
   try {
-    const res = await fetch(url, {
+    // 1. Consulta Autenticação PPPoE com Senha
+    const authPayload = {
+      ConsultaAutenticacaoSenha: {
+        Autenticacao: { ChaveIntegracao: apiKey },
+        Filtro: `Contrato = '${contratoSanitizado}'`
+      }
+    };
+
+    const resAuth = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(authPayload),
       signal: AbortSignal.timeout(5000)
     });
 
-    if (!res.ok) return null;
+    if (!resAuth.ok) return null;
 
-    const data = await res.json();
+    const dataAuth = await resAuth.json();
+    if (!dataAuth || dataAuth.status !== 1 || !Array.isArray(dataAuth.result) || dataAuth.result.length === 0) {
+      return null;
+    }
 
-    if (data?.status === 1 && Array.isArray(data?.result) && data.result.length > 0) {
-      const auth = data.result.find(r => r.NAS !== '(CENTRAL ASSINANTE)' && r.NAS !== '-2') || data.result[0];
-      if (auth) {
-        return {
-          usuario: auth.Usuario || auth.usuario || '',
-          senha: auth.Senha || auth.senha || ''
+    // Pega a autenticação PPPoE de internet
+    const auth = dataAuth.result.find(r => r.NAS !== '(CENTRAL ASSINANTE)' && r.NAS !== '-2') || dataAuth.result[0];
+    const usuarioPPPoE = auth.Usuario || auth.usuario || '';
+    const senhaPPPoE = auth.Senha || auth.senha || '';
+    const clienteId = auth.Cliente || auth.cliente || '';
+    let observacoes = auth.Observacao || auth.observacao || '';
+    let contato = '';
+    let pontoReferencia = '';
+
+    // 2. Se temos o ID do Cliente, busca os dados cadastrais (Observações/Caixa, Contatos, Endereço)
+    if (clienteId) {
+      try {
+        const clientPayload = {
+          ConsultaClientes: {
+            Autenticacao: { ChaveIntegracao: apiKey },
+            Filtro: `Codigo = '${clienteId}'`
+          }
         };
+
+        const resCli = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(clientPayload),
+          signal: AbortSignal.timeout(5000)
+        });
+
+        if (resCli.ok) {
+          const dataCli = await resCli.json();
+          if (dataCli?.status === 1 && Array.isArray(dataCli.result) && dataCli.result.length > 0) {
+            const cli = dataCli.result[0];
+            
+            // Observações do cliente (onde fica a caixa)
+            if (cli.Observacoes || cli.Observacao) {
+              observacoes = cli.Observacoes || cli.Observacao;
+            }
+
+            // Contato (Prioridade: Celular -> Residencial -> Comercial)
+            const foneRaw = cli.TelCelular || cli.TelResidencial || cli.TelComercial || '';
+            const foneFmt = formatarTelefone(foneRaw);
+            const nome = (cli.Nome || '').trim();
+            contato = foneFmt ? `${foneFmt}${nome ? ` - ${nome}` : ''}` : nome;
+
+            // Endereço / Ponto de Referência
+            const partesEnd = [];
+            if (cli.Endereco) partesEnd.push(cli.Endereco);
+            if (cli.Numero) partesEnd.push(`nº ${cli.Numero}`);
+            if (cli.Complemento) partesEnd.push(`(${cli.Complemento})`);
+            if (cli.Bairro) partesEnd.push(cli.Bairro);
+            if (cli.Cidade) partesEnd.push(`${cli.Cidade}/${cli.UF || ''}`);
+            pontoReferencia = partesEnd.join(', ');
+          }
+        }
+      } catch (cliErr) {
+        console.warn('[RBX API] Aviso ao buscar dados do cliente:', cliErr.message);
       }
     }
-  } catch {
-    // Falha silenciosa
-  }
 
-  return null;
+    return {
+      usuarioPPPoE,
+      senhaPPPoE,
+      caixaPosicao: extrairCaixaPosicao(observacoes),
+      contato,
+      pontoReferencia,
+      clienteId,
+      observacoesCompletas: observacoes
+    };
+
+  } catch (err) {
+    console.error('[RBX API Error]:', err.message);
+    return null;
+  }
 }
 
 /**
- * Consulta de Contrato no RBX (Híbrido: Módulo de Redes + Observações + API)
+ * Consulta de Contrato no RBX (API RBX + MySQL Resiliente)
  */
 app.get('/api/consulta/:contrato', async (req, res) => {
   const contratoRaw = (req.params.contrato || '').trim();
@@ -139,7 +196,21 @@ app.get('/api/consulta/:contrato', async (req, res) => {
   let clienteId = '';
   let observacoesCompletas = '';
 
-  // 1. CONSULTA AO BANCO DE DADOS MYSQL
+  // 1. CONSULTA VIA API DO RBX (Funciona em qualquer lugar: Cloud / Local / VPS)
+  if (isRbxApiConfigured) {
+    const apiData = await buscarDadosApiRbx(env.rbxUrl, env.rbxKey, contrato);
+    if (apiData) {
+      usuarioPPPoE = apiData.usuarioPPPoE || '';
+      senhaPPPoE = apiData.senhaPPPoE || '';
+      caixaPosicao = apiData.caixaPosicao || '';
+      contato = apiData.contato || '';
+      pontoReferencia = apiData.pontoReferencia || '';
+      clienteId = apiData.clienteId || '';
+      observacoesCompletas = apiData.observacoesCompletas || '';
+    }
+  }
+
+  // 2. COMPLEMENTA COM O BANCO DE DADOS MYSQL (Se o MySQL estiver acessível)
   if (isDbConfigured) {
     try {
       const connection = await mysql.createConnection({
@@ -148,135 +219,72 @@ app.get('/api/consulta/:contrato', async (req, res) => {
         user: env.dbUser,
         password: env.dbPassword,
         database: env.dbName,
-        connectTimeout: 5000
+        connectTimeout: 3000
       });
 
-      // A) Busca Contrato
-      const [contratoRows] = await connection.execute(
-        'SELECT Numero, Cliente, Observacoes, SiciTecnologia, SiciMeioTransmissao FROM Contratos WHERE Numero = ? LIMIT 1',
-        [contrato]
-      ).catch(() => [[]]);
-
-      if (contratoRows.length > 0) {
-        clienteId = contratoRows[0].Cliente;
-        if (contratoRows[0].Observacoes) {
-          observacoesCompletas += contratoRows[0].Observacoes + '\n';
-        }
-      }
-
-      // B) Busca no MÓDULO DE REDES FTTH (ClientesRede + GWRedesElementos)
-      // Esta é a documentação nativa de caixas (CTOs) do RBX
-      const [redeRows] = await connection.execute(
-        `SELECT cr.RedeElemPorta, cr.Fibra, cr.Cabo, ge.Descricao as ElementoNome
-         FROM ClientesRede cr
-         LEFT JOIN GWRedesElementos ge ON ge.Codigo = cr.RedeElemento
-         WHERE cr.Contrato = ? LIMIT 1`,
-        [contrato]
-      ).catch(() => [[]]);
-
-      if (redeRows.length > 0 && redeRows[0].ElementoNome) {
-        const r = redeRows[0];
-        caixaPosicao = `${r.ElementoNome}${r.RedeElemPorta ? ` PORTA ${r.RedeElemPorta}` : ''}`;
-      }
-
-      // C) Busca Usuário PPPoE na tabela ClientesUsuarios
-      const [authRows] = await connection.execute(
-        `SELECT id, Cliente, Contrato, Usuario, Senha, MAC, Observacao, Perfil_Central, NAS 
-         FROM ClientesUsuarios 
-         WHERE Contrato = ? 
-         ORDER BY (Perfil_Central = 0) DESC, id DESC`,
-        [contrato]
-      ).catch(() => [[]]);
-
-      if (authRows.length > 0) {
-        const pppoeRow = authRows.find(r => r.Perfil_Central === 0 || (r.NAS !== '-2' && r.NAS !== -2)) || authRows[0];
-        usuarioPPPoE = pppoeRow.Usuario || '';
-        if (!clienteId && pppoeRow.Cliente) {
-          clienteId = pppoeRow.Cliente;
-        }
-        if (pppoeRow.Observacao) {
-          observacoesCompletas += pppoeRow.Observacao + '\n';
-        }
-      }
-
-      // D) Busca Dados do Cliente na tabela Clientes
-      if (clienteId) {
-        const [cliRows] = await connection.execute(
-          `SELECT Codigo, Nome, Endereco, Numero, Complemento, Bairro, Cidade, UF, CEP,
-                  TelComercial, TelResidencial, TelCelular, Observacoes 
-           FROM Clientes 
-           WHERE Codigo = ? LIMIT 1`,
-          [clienteId]
+      // Se a caixa ainda não foi encontrada, tenta pelo Módulo de Redes FTTH (ClientesRede)
+      if (!caixaPosicao) {
+        const [redeRows] = await connection.execute(
+          `SELECT cr.RedeElemPorta, cr.Fibra, cr.Cabo, ge.Descricao as ElementoNome
+           FROM ClientesRede cr
+           LEFT JOIN GWRedesElementos ge ON ge.Codigo = cr.RedeElemento
+           WHERE cr.Contrato = ? LIMIT 1`,
+          [contrato]
         ).catch(() => [[]]);
 
-        if (cliRows.length > 0) {
-          const cli = cliRows[0];
-          
-          if (cli.Observacoes) {
-            observacoesCompletas = cli.Observacoes + '\n' + observacoesCompletas;
+        if (redeRows.length > 0 && redeRows[0].ElementoNome) {
+          const r = redeRows[0];
+          caixaPosicao = `${r.ElementoNome}${r.RedeElemPorta ? ` PORTA ${r.RedeElemPorta}` : ''}`;
+        }
+      }
+
+      // Se o contato ainda não veio da API, busca na tabela Clientes
+      if (!contato || !pontoReferencia) {
+        if (!clienteId) {
+          const [contratoRows] = await connection.execute(
+            'SELECT Cliente FROM Contratos WHERE Numero = ? LIMIT 1',
+            [contrato]
+          ).catch(() => [[]]);
+          if (contratoRows.length > 0) clienteId = contratoRows[0].Cliente;
+        }
+
+        if (clienteId) {
+          const [cliRows] = await connection.execute(
+            `SELECT Nome, Endereco, Numero, Complemento, Bairro, Cidade, UF, TelComercial, TelResidencial, TelCelular, Observacoes 
+             FROM Clientes 
+             WHERE Codigo = ? LIMIT 1`,
+            [clienteId]
+          ).catch(() => [[]]);
+
+          if (cliRows.length > 0) {
+            const cli = cliRows[0];
+            if (!caixaPosicao) caixaPosicao = extrairCaixaPosicao(cli.Observacoes);
+            
+            if (!contato) {
+              const foneRaw = cli.TelCelular || cli.TelResidencial || cli.TelComercial || '';
+              const foneFmt = formatarTelefone(foneRaw);
+              const nome = (cli.Nome || '').trim();
+              contato = foneFmt ? `${foneFmt}${nome ? ` - ${nome}` : ''}` : nome;
+            }
+
+            if (!pontoReferencia) {
+              const partesEnd = [];
+              if (cli.Endereco) partesEnd.push(cli.Endereco);
+              if (cli.Numero) partesEnd.push(`nº ${cli.Numero}`);
+              if (cli.Complemento) partesEnd.push(`(${cli.Complemento})`);
+              if (cli.Bairro) partesEnd.push(cli.Bairro);
+              if (cli.Cidade) partesEnd.push(`${cli.Cidade}/${cli.UF || ''}`);
+              pontoReferencia = partesEnd.join(', ');
+            }
           }
-
-          // Prioridade do telefone: TelCelular -> TelResidencial -> TelComercial
-          const foneRaw = cli.TelCelular || cli.TelResidencial || cli.TelComercial || '';
-          const foneFmt = formatarTelefone(foneRaw);
-          const nome = (cli.Nome || '').trim();
-          contato = foneFmt ? `${foneFmt}${nome ? ` - ${nome}` : ''}` : nome;
-
-          const partesEnd = [];
-          if (cli.Endereco) partesEnd.push(cli.Endereco);
-          if (cli.Numero) partesEnd.push(`nº ${cli.Numero}`);
-          if (cli.Complemento) partesEnd.push(`(${cli.Complemento})`);
-          if (cli.Bairro) partesEnd.push(cli.Bairro);
-          if (cli.Cidade) partesEnd.push(`${cli.Cidade}/${cli.UF || ''}`);
-          
-          pontoReferencia = partesEnd.join(', ');
         }
-      }
-
-      // E) Endereço de Instalação (se houver em ContratosEndereco)
-      const [endInstRows] = await connection.execute(
-        `SELECT Endereco, Numero, Complemento, Bairro, Cidade, UF, CEP 
-         FROM ContratosEndereco 
-         WHERE Contrato = ? AND Tipo = 'I' LIMIT 1`,
-        [contrato]
-      ).catch(() => [[]]);
-
-      if (endInstRows.length > 0) {
-        const endInst = endInstRows[0];
-        const partesInst = [];
-        if (endInst.Endereco) partesInst.push(endInst.Endereco);
-        if (endInst.Numero) partesInst.push(`nº ${endInst.Numero}`);
-        if (endInst.Complemento) partesInst.push(`(${endInst.Complemento})`);
-        if (endInst.Bairro) partesInst.push(endInst.Bairro);
-        if (endInst.Cidade) partesInst.push(`${endInst.Cidade}/${endInst.UF || ''}`);
-        
-        if (partesInst.length > 0) {
-          pontoReferencia = partesInst.join(', ');
-        }
-      }
-
-      // Se a caixa não foi encontrada no módulo de rede ClientesRede, faz o fallback para as Observações
-      if (!caixaPosicao) {
-        caixaPosicao = extrairCaixaPosicao(observacoesCompletas);
       }
 
       await connection.end();
 
     } catch (dbErr) {
-      console.error('[DB Error]: Falha na consulta ao banco.');
-    }
-  }
-
-  // 2. CONSULTA SENHA DESCRIPTOGRAFADA NA API DO RBX
-  if (isRbxApiConfigured) {
-    try {
-      const authApiResult = await buscarSenhaApiRbx(env.rbxUrl, env.rbxKey, contrato);
-      if (authApiResult) {
-        if (authApiResult.usuario) usuarioPPPoE = authApiResult.usuario;
-        if (authApiResult.senha) senhaPPPoE = authApiResult.senha;
-      }
-    } catch {
-      // Ignora falhas de API
+      // Se o MySQL falhar na nuvem por firewall, os dados já vieram da API do RBX perfeitamente!
+      console.warn('[DB Fallback]: Banco MySQL inacessível, utilizando dados da API RBX.');
     }
   }
 
@@ -286,7 +294,7 @@ app.get('/api/consulta/:contrato', async (req, res) => {
 
     return res.json({
       sucesso: true,
-      origem: senhaPPPoE ? 'RBX Banco + API' : 'Banco de Dados RBX',
+      origem: senhaPPPoE ? 'RBX Soft API (Produção)' : 'Banco de Dados RBX',
       contrato: contrato.toUpperCase(),
       caixaPosicao: (caixaPosicao || '').toUpperCase(),
       usuarioPPPoE: usuarioPPPoE,
@@ -300,12 +308,12 @@ app.get('/api/consulta/:contrato', async (req, res) => {
 
   return res.status(404).json({
     sucesso: false,
-    erro: `Contrato ${contrato} não encontrado no banco de dados do RBX.`
+    erro: `Contrato ${contrato} não encontrado no RBX.`
   });
 });
 
 // Fallback para React Router / SPA em produção
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
