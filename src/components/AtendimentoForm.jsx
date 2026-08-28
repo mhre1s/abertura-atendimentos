@@ -7,11 +7,12 @@ import {
   WifiOff, 
   Wrench, 
   FastForward, 
+  Activity,
   Hash, 
   Search, 
   Loader2, 
   Box,
-  KeyRound,
+  KeyRound, 
   GitCommit, 
   Phone, 
   MapPin, 
@@ -24,6 +25,7 @@ const TIPOS_ATENDIMENTO = [
   { value: '#LOS#', label: '#LOS#', icon: WifiOff, color: 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100' },
   { value: '#VISITA_TECNICA#', label: '#VISITA_TECNICA#', icon: Wrench, color: 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100' },
   { value: '#FAST#', label: '#FAST#', icon: FastForward, color: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' },
+  { value: '#SINAL_BAIXO#', label: '#SINAL_BAIXO#', icon: Activity, color: 'border-purple-200 bg-purple-50 text-purple-800 hover:bg-purple-100' },
 ];
 
 export default function AtendimentoForm({
@@ -78,6 +80,7 @@ export default function AtendimentoForm({
               <option value="#LOS#">#LOS#</option>
               <option value="#VISITA_TECNICA#">#VISITA_TECNICA#</option>
               <option value="#FAST#">#FAST#</option>
+              <option value="#SINAL_BAIXO#">#SINAL_BAIXO#</option>
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
               <ChevronDown className="w-4 h-4" />
@@ -174,6 +177,28 @@ export default function AtendimentoForm({
             />
           </div>
         </div>
+
+        {/* 3.1 Input de SINAL (Aparece quando #SINAL_BAIXO# for selecionado) */}
+        {formData.tipo === '#SINAL_BAIXO#' && (
+          <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5 transition-all">
+            <label htmlFor="sinal" className="block text-xs font-bold uppercase tracking-wider text-purple-900 flex items-center">
+              <Activity className="w-3.5 h-3.5 mr-1 text-purple-600" />
+              Sinal <span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                id="sinal"
+                name="sinal"
+                value={formData.sinal || ''}
+                onChange={(e) => onChange('sinal', e.target.value)}
+                placeholder="Ex: -27.50 DBM ou -28"
+                className="w-full px-3 py-2 bg-white border border-purple-300 text-purple-950 text-sm font-semibold rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all uppercase outline-none"
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
 
         {/* 4. PPPoE (Usuário / Senha mantidos no formato original) */}
         <div>

@@ -12,6 +12,7 @@ export default function App() {
     tipo: '#LOS#',
     contrato: '',
     caixaPosicao: '',
+    sinal: '',
     pppoe: '',
     emenda: '',
     contato: '',
@@ -54,6 +55,7 @@ export default function App() {
       tipo: '#LOS#',
       contrato: '',
       caixaPosicao: '',
+      sinal: '',
       pppoe: '',
       emenda: '',
       contato: '',
@@ -63,22 +65,33 @@ export default function App() {
   };
 
   // Texto formatado gerado em tempo real
+  // Quando for #SINAL_BAIXO#, adiciona a linha SINAL: logo após CAIXA E POSIÇÃO
   const generatedText = useMemo(() => {
     const tipo = (formData.tipo || '#LOS#').toUpperCase();
     const caixaPosicao = formData.caixaPosicao.trim().toUpperCase();
+    const sinal = (formData.sinal || '').trim().toUpperCase();
     const pppoe = formData.pppoe.trim(); // Mantém original
     const emenda = formData.emenda.trim().toUpperCase();
     const contato = formData.contato.trim().toUpperCase();
     const pontoRef = formData.pontoReferencia.trim().toUpperCase();
 
-    return [
+    const linhas = [
       `${tipo}`,
-      `CAIXA E POSIÇÃO: ${caixaPosicao}`,
+      `CAIXA E POSIÇÃO: ${caixaPosicao}`
+    ];
+
+    if (tipo === '#SINAL_BAIXO#') {
+      linhas.push(`SINAL: ${sinal}`);
+    }
+
+    linhas.push(
       `PPPoE: ${pppoe}`,
       `EMENDA: ${emenda}`,
       `CONTATO: ${contato}`,
       `PONTO DE REFERÊNCIA: ${pontoRef}`
-    ].join('\n');
+    );
+
+    return linhas.join('\n');
   }, [formData]);
 
   // Salvar no histórico
@@ -93,6 +106,7 @@ export default function App() {
       tipo: formData.tipo.toUpperCase(),
       contrato: formData.contrato.trim().toUpperCase(),
       caixaPosicao: formData.caixaPosicao.trim().toUpperCase(),
+      sinal: (formData.sinal || '').trim().toUpperCase(),
       pppoe: formData.pppoe.trim(),
       emenda: formData.emenda.trim().toUpperCase(),
       contato: formData.contato.trim().toUpperCase(),
@@ -164,6 +178,7 @@ export default function App() {
       tipo: item.tipo,
       contrato: item.contrato,
       caixaPosicao: item.caixaPosicao || '',
+      sinal: item.sinal || '',
       pppoe: item.pppoe || '',
       emenda: item.emenda || '',
       contato: item.contato || '',
@@ -213,7 +228,8 @@ export default function App() {
               <Radio className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">Abertura de Atendimento</h1>
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">Abertura de Atendimento & LOS</h1>
+              <p className="text-xs text-slate-500 font-medium">Gerador automático de chamado para SCM e suporte técnico</p>
             </div>
           </div>
         </div>
