@@ -127,19 +127,51 @@ export default function App() {
     }
   }, [formData, generatedText, showToast]);
 
+  // Função universal de cópia (funciona tanto em HTTPS quanto em HTTP/IP local)
+  const copiarTexto = async (texto) => {
+    if (!texto) return false;
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(texto);
+        return true;
+      } catch {
+        // Fallback abaixo
+      }
+    }
+
+    // Fallback universal para HTTP / rede interna (execCommand)
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = texto;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      textArea.setAttribute('readonly', '');
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return Boolean(successful);
+    } catch (err) {
+      console.error('Erro no fallback de cópia:', err);
+      return false;
+    }
+  };
+
   // Copiar para clipboard
   const handleCopy = async (text) => {
     if (!text) {
       showToast('Nada para copiar.', 'error');
       return false;
     }
-    try {
-      await navigator.clipboard.writeText(text);
+    const sucesso = await copiarTexto(text);
+    if (sucesso) {
       showToast('Texto copiado para a área de transferência!');
       saveToHistory(false);
       return true;
-    } catch (err) {
-      console.error('Erro ao copiar:', err);
+    } else {
       showToast('Erro ao copiar texto.', 'error');
       return false;
     }
@@ -189,10 +221,10 @@ export default function App() {
 
   // Copiar direto do histórico
   const handleCopyDirectHistory = async (texto, contrato) => {
-    try {
-      await navigator.clipboard.writeText(texto);
+    const sucesso = await copiarTexto(texto);
+    if (sucesso) {
       showToast(`Texto do contrato ${contrato} copiado!`);
-    } catch {
+    } else {
       showToast('Erro ao copiar item.', 'error');
     }
   };
