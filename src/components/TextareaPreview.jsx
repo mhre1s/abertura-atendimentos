@@ -3,7 +3,6 @@ import {
   FileText, 
   Copy, 
   Check, 
-  MessageSquare, 
   Download 
 } from 'lucide-react';
 
@@ -21,12 +20,6 @@ export default function TextareaPreview({
       setCopiedRecently(true);
       setTimeout(() => setCopiedRecently(false), 2000);
     }
-  };
-
-  const handleWhatsAppShare = () => {
-    if (!generatedText) return;
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(generatedText)}`;
-    window.open(url, '_blank');
   };
 
   const handleDownloadTxt = () => {
@@ -64,7 +57,7 @@ export default function TextareaPreview({
       {/* Generated Textarea */}
       <div className="relative mb-4">
         <textarea
-          rows={7}
+          rows={12}
           readOnly
           value={generatedText}
           onClick={(e) => e.target.select()}
@@ -88,7 +81,7 @@ export default function TextareaPreview({
       </div>
 
       {/* Action Buttons */}
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         <button
           type="button"
           onClick={handleCopyClick}
@@ -111,24 +104,14 @@ export default function TextareaPreview({
           )}
         </button>
 
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={handleWhatsAppShare}
-            className="py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs rounded-xl border border-emerald-200 transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
-          >
-            <MessageSquare className="w-4 h-4 text-emerald-600" />
-            <span>Compartilhar WhatsApp</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadTxt}
-            className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-slate-600" />
-            <span>Baixar .TXT</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleDownloadTxt}
+          className="w-full py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+        >
+          <Download className="w-4 h-4 text-slate-600" />
+          <span>Baixar .TXT</span>
+        </button>
       </div>
     </div>
   );

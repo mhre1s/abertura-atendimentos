@@ -91,7 +91,7 @@ export default function App() {
       `PONTO DE REFERÊNCIA: ${pontoRef}`
     );
 
-    return linhas.join('\n');
+    return linhas.join('\n\n');
   }, [formData]);
 
   // Salvar no histórico
