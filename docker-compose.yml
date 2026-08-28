@@ -1,0 +1,9 @@
+services:
+  abertura-los:
+    build: .
+    container_name: abertura_los_app
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
