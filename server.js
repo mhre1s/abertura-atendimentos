@@ -65,8 +65,8 @@ function extrairCaixaPosicao(observacoes) {
 }
 
 /**
- * Seleciona a autenticação PPPoE real de internet fibra
- * (Ignora CPF da Central do Assinante, códigos internos e prioriza logins com @, MAC de ONU e NAS padrão)
+ * Seleciona a autenticação de Fibra Óptica / PPPoE
+ * (Ignora CPF da Central do Assinante e prioriza autenticação com MAC de ONU/CPE, NAS padrão e ID mais recente)
  */
 function selecionarMelhorPPPoE(lista) {
   if (!Array.isArray(lista) || lista.length === 0) return null;
@@ -76,8 +76,10 @@ function selecionarMelhorPPPoE(lista) {
     const nas = (r.NAS || r.nas || '').toString();
     const perfil = r.Perfil_Central || r.perfil_central;
     const user = (r.Usuario || r.usuario || '').toString().trim();
+    const obs = (r.Observacao || r.observacao || r.Observacoes || '').toString();
+
     if (nas === '(CENTRAL ASSINANTE)' || nas === '-2' || perfil === 1 || perfil === '1') return false;
-    if (r.Observacao === 'DADOS CENTRAL DO ASSINANTE' || r.Observacoes === 'DADOS CENTRAL DO ASSINANTE') return false;
+    if (obs.toUpperCase().includes('CENTRAL DO ASSINANTE')) return false;
     if (/^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(user)) return false;
     return true;
   });
@@ -85,38 +87,34 @@ function selecionarMelhorPPPoE(lista) {
   const pool = candidatos.length > 0 ? candidatos : lista;
 
   return pool.slice().sort((a, b) => {
-    const userA = (a.Usuario || a.usuario || '').toString();
-    const userB = (b.Usuario || b.usuario || '').toString();
     const macA = (a.MAC || a.mac || '').toString().trim();
     const macB = (b.MAC || b.mac || '').toString().trim();
     const nasA = (a.NAS || a.nas || '').toString();
     const nasB = (b.NAS || b.nas || '').toString();
+    const senhaA = (a.Senha || a.senha || '').toString();
+    const senhaB = (b.Senha || b.senha || '').toString();
     const idA = Number(a.Id || a.id) || 0;
     const idB = Number(b.Id || b.id) || 0;
 
     let scoreA = 0;
     let scoreB = 0;
 
-    // Prioridade 1: Tem domínio / @ de provedor (ex: jurandir12910@trixnet.com.br)
-    if (userA.includes('@')) scoreA += 10;
-    if (userB.includes('@')) scoreB += 10;
+    // Prioridade 1: Possui endereço MAC de ONU / CPE cadastrado (identifica fibra óptica)
+    if (macA.length > 0) scoreA += 10;
+    if (macB.length > 0) scoreB += 10;
 
-    // Prioridade 2: Tem MAC de ONU/CPE cadastrado
-    if (macA.length > 0) scoreA += 5;
-    if (macB.length > 0) scoreB += 5;
+    // Prioridade 2: NAS padrão de autenticação PPPoE de internet ((TODOS) ou -1)
+    if (nasA === '(TODOS)' || nasA === '-1') scoreA += 5;
+    if (nasB === '(TODOS)' || nasB === '-1') scoreB += 5;
 
-    // Prioridade 3: NAS (TODOS) ou -1 padrão de PPPoE
-    if (nasA === '(TODOS)' || nasA === '-1') scoreA += 3;
-    if (nasB === '(TODOS)' || nasB === '-1') scoreB += 3;
-
-    // Prioridade 4: Não é puramente numérico (ex: 012910)
-    if (!/^\d+$/.test(userA)) scoreA += 2;
-    if (!/^\d+$/.test(userB)) scoreB += 2;
+    // Prioridade 3: Possui senha preenchida
+    if (senhaA.length > 0) scoreA += 3;
+    if (senhaB.length > 0) scoreB += 3;
 
     if (scoreA !== scoreB) {
       return scoreB - scoreA;
     }
-    // Desempate pelo ID mais recente
+    // Desempate pelo cadastro mais recente (ID maior)
     return idB - idA;
   })[0];
 }
