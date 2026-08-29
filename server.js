@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -65,6 +65,63 @@ function extrairCaixaPosicao(observacoes) {
 }
 
 /**
+ * Seleciona a autenticação PPPoE real de internet fibra
+ * (Ignora CPF da Central do Assinante, códigos internos e prioriza logins com @, MAC de ONU e NAS padrão)
+ */
+function selecionarMelhorPPPoE(lista) {
+  if (!Array.isArray(lista) || lista.length === 0) return null;
+
+  // Filtra registros que são puramente Central do Assinante / CPF
+  const candidatos = lista.filter(r => {
+    const nas = (r.NAS || r.nas || '').toString();
+    const perfil = r.Perfil_Central || r.perfil_central;
+    const user = (r.Usuario || r.usuario || '').toString().trim();
+    if (nas === '(CENTRAL ASSINANTE)' || nas === '-2' || perfil === 1 || perfil === '1') return false;
+    if (r.Observacao === 'DADOS CENTRAL DO ASSINANTE' || r.Observacoes === 'DADOS CENTRAL DO ASSINANTE') return false;
+    if (/^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(user)) return false;
+    return true;
+  });
+
+  const pool = candidatos.length > 0 ? candidatos : lista;
+
+  return pool.slice().sort((a, b) => {
+    const userA = (a.Usuario || a.usuario || '').toString();
+    const userB = (b.Usuario || b.usuario || '').toString();
+    const macA = (a.MAC || a.mac || '').toString().trim();
+    const macB = (b.MAC || b.mac || '').toString().trim();
+    const nasA = (a.NAS || a.nas || '').toString();
+    const nasB = (b.NAS || b.nas || '').toString();
+    const idA = Number(a.Id || a.id) || 0;
+    const idB = Number(b.Id || b.id) || 0;
+
+    let scoreA = 0;
+    let scoreB = 0;
+
+    // Prioridade 1: Tem domínio / @ de provedor (ex: jurandir12910@trixnet.com.br)
+    if (userA.includes('@')) scoreA += 10;
+    if (userB.includes('@')) scoreB += 10;
+
+    // Prioridade 2: Tem MAC de ONU/CPE cadastrado
+    if (macA.length > 0) scoreA += 5;
+    if (macB.length > 0) scoreB += 5;
+
+    // Prioridade 3: NAS (TODOS) ou -1 padrão de PPPoE
+    if (nasA === '(TODOS)' || nasA === '-1') scoreA += 3;
+    if (nasB === '(TODOS)' || nasB === '-1') scoreB += 3;
+
+    // Prioridade 4: Não é puramente numérico (ex: 012910)
+    if (!/^\d+$/.test(userA)) scoreA += 2;
+    if (!/^\d+$/.test(userB)) scoreB += 2;
+
+    if (scoreA !== scoreB) {
+      return scoreB - scoreA;
+    }
+    // Desempate pelo ID mais recente
+    return idB - idA;
+  })[0];
+}
+
+/**
  * Busca dados completos via API do RBX (Autenticações + Clientes)
  * Funciona 100% mesmo quando o MySQL remoto estiver bloqueado pelo firewall na Cloud
  */
@@ -96,8 +153,10 @@ async function buscarDadosApiRbx(url, apiKey, contrato) {
       return null;
     }
 
-    // Pega a autenticação PPPoE de internet
-    const auth = dataAuth.result.find(r => r.NAS !== '(CENTRAL ASSINANTE)' && r.NAS !== '-2') || dataAuth.result[0];
+    // Seleciona a autenticação PPPoE real correta
+    const auth = selecionarMelhorPPPoE(dataAuth.result);
+    if (!auth) return null;
+
     const usuarioPPPoE = auth.Usuario || auth.usuario || '';
     const senhaPPPoE = auth.Senha || auth.senha || '';
     const clienteId = auth.Cliente || auth.cliente || '';
