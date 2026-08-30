@@ -66,27 +66,35 @@ function extrairCaixaPosicao(observacoes) {
 
 /**
  * Seleciona a autenticação de Fibra Óptica / PPPoE
- * (Ignora CPF da Central do Assinante e prioriza autenticação com MAC de ONU/CPE, NAS padrão e ID mais recente)
+ * (Ignora CPF da Central do Assinante, contas VoIP e prioriza autenticação com MAC de ONU/CPE e NAS padrão)
  */
 function selecionarMelhorPPPoE(lista) {
   if (!Array.isArray(lista) || lista.length === 0) return null;
 
-  // Filtra registros que são puramente Central do Assinante / CPF
+  // 1. Filtra registros que NÃO são autenticações de banda larga/fibra
   const candidatos = lista.filter(r => {
     const nas = (r.NAS || r.nas || '').toString();
     const perfil = r.Perfil_Central || r.perfil_central;
     const user = (r.Usuario || r.usuario || '').toString().trim();
+    const pass = (r.Senha || r.senha || '').toString().trim();
     const obs = (r.Observacao || r.observacao || r.Observacoes || '').toString();
 
+    // Remove Central do Assinante / CPF
     if (nas === '(CENTRAL ASSINANTE)' || nas === '-2' || perfil === 1 || perfil === '1') return false;
     if (obs.toUpperCase().includes('CENTRAL DO ASSINANTE')) return false;
     if (/^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(user)) return false;
+
+    // Remove contas VoIP/SIP automáticas onde login == senha e são puramente numéricos (ex: 0021044 / 0021044 ou 012910 / 012910)
+    if (user === pass && /^\d+$/.test(user)) return false;
+
     return true;
   });
 
   const pool = candidatos.length > 0 ? candidatos : lista;
 
   return pool.slice().sort((a, b) => {
+    const userA = (a.Usuario || a.usuario || '').toString().trim();
+    const userB = (b.Usuario || b.usuario || '').toString().trim();
     const macA = (a.MAC || a.mac || '').toString().trim();
     const macB = (b.MAC || b.mac || '').toString().trim();
     const nasA = (a.NAS || a.nas || '').toString();
@@ -99,17 +107,21 @@ function selecionarMelhorPPPoE(lista) {
     let scoreA = 0;
     let scoreB = 0;
 
-    // Prioridade 1: Possui endereço MAC de ONU / CPE cadastrado (identifica fibra óptica)
-    if (macA.length > 0) scoreA += 10;
-    if (macB.length > 0) scoreB += 10;
+    // Prioridade 1: Possui endereço MAC de ONU / CPE cadastrado (identifica fibra óptica real)
+    if (macA.length > 0) scoreA += 25;
+    if (macB.length > 0) scoreB += 25;
 
-    // Prioridade 2: NAS padrão de autenticação PPPoE de internet ((TODOS) ou -1)
-    if (nasA === '(TODOS)' || nasA === '-1') scoreA += 5;
-    if (nasB === '(TODOS)' || nasB === '-1') scoreB += 5;
+    // Prioridade 2: Não é puramente numérico (login real de cliente)
+    if (!/^\d+$/.test(userA)) scoreA += 15;
+    if (!/^\d+$/.test(userB)) scoreB += 15;
 
-    // Prioridade 3: Possui senha preenchida
-    if (senhaA.length > 0) scoreA += 3;
-    if (senhaB.length > 0) scoreB += 3;
+    // Prioridade 3: NAS padrão de autenticação PPPoE de internet ((TODOS) ou -1)
+    if (nasA === '(TODOS)' || nasA === '-1') scoreA += 10;
+    if (nasB === '(TODOS)' || nasB === '-1') scoreB += 10;
+
+    // Prioridade 4: Possui senha preenchida
+    if (senhaA.length > 0) scoreA += 5;
+    if (senhaB.length > 0) scoreB += 5;
 
     if (scoreA !== scoreB) {
       return scoreB - scoreA;
