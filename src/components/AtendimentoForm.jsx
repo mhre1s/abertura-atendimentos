@@ -17,7 +17,8 @@ import {
   Phone, 
   MapPin, 
   Bookmark, 
-  Sparkles 
+  Sparkles,
+  AlertCircle 
 } from 'lucide-react';
 
 const TIPOS_ATENDIMENTO = [
@@ -157,10 +158,10 @@ export default function AtendimentoForm({
           </div>
         </div>
 
-        {/* 3. Caixa e Posição (MAIÚSCULO) */}
+        {/* 3. Caixa (MAIÚSCULO) */}
         <div>
           <label htmlFor="caixaPosicao" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-            Caixa e Posição
+            Caixa
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -178,7 +179,29 @@ export default function AtendimentoForm({
           </div>
         </div>
 
-        {/* 3.1 Input de SINAL (Aparece quando #SINAL_BAIXO# for selecionado) */}
+        {/* 3.1 Input de RECLAMAÇÃO (Aparece quando #FAST# for selecionado) */}
+        {formData.tipo === '#FAST#' && (
+          <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5 transition-all">
+            <label htmlFor="reclamacao" className="block text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center">
+              <AlertCircle className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+              Reclamação <span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                id="reclamacao"
+                name="reclamacao"
+                value={formData.reclamacao || ''}
+                onChange={(e) => onChange('reclamacao', e.target.value)}
+                placeholder="Ex: LENTIDÃO NA NAVEGAÇÃO / QUEDA CONSTANTE"
+                className="w-full px-3 py-2 bg-white border border-emerald-300 text-emerald-950 text-sm font-semibold rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all uppercase outline-none"
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 3.2 Input de SINAL (Aparece quando #SINAL_BAIXO# for selecionado) */}
         {formData.tipo === '#SINAL_BAIXO#' && (
           <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl space-y-1.5 transition-all">
             <label htmlFor="sinal" className="block text-xs font-bold uppercase tracking-wider text-purple-900 flex items-center">

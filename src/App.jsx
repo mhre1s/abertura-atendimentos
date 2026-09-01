@@ -12,6 +12,7 @@ export default function App() {
     tipo: '#LOS#',
     contrato: '',
     caixaPosicao: '',
+    reclamacao: '',
     sinal: '',
     pppoe: '',
     emenda: '',
@@ -55,6 +56,7 @@ export default function App() {
       tipo: '#LOS#',
       contrato: '',
       caixaPosicao: '',
+      reclamacao: '',
       sinal: '',
       pppoe: '',
       emenda: '',
@@ -65,10 +67,12 @@ export default function App() {
   };
 
   // Texto formatado gerado em tempo real
-  // Quando for #SINAL_BAIXO#, adiciona a linha SINAL: logo após CAIXA E POSIÇÃO
+  // Quando for #FAST#, adiciona a linha RECLAMAÇÃO: logo após CAIXA:
+  // Quando for #SINAL_BAIXO#, adiciona a linha SINAL: logo após CAIXA:
   const generatedText = useMemo(() => {
     const tipo = (formData.tipo || '#LOS#').toUpperCase();
     const caixaPosicao = formData.caixaPosicao.trim().toUpperCase();
+    const reclamacao = (formData.reclamacao || '').trim().toUpperCase();
     const sinal = (formData.sinal || '').trim().toUpperCase();
     const pppoe = formData.pppoe.trim(); // Mantém original
     const emenda = formData.emenda.trim().toUpperCase();
@@ -77,10 +81,12 @@ export default function App() {
 
     const linhas = [
       `${tipo}`,
-      `CAIXA E POSIÇÃO: ${caixaPosicao}`
+      `CAIXA: ${caixaPosicao}`
     ];
 
-    if (tipo === '#SINAL_BAIXO#') {
+    if (tipo === '#FAST#') {
+      linhas.push(`RECLAMAÇÃO: ${reclamacao}`);
+    } else if (tipo === '#SINAL_BAIXO#') {
       linhas.push(`SINAL: ${sinal}`);
     }
 
@@ -106,6 +112,7 @@ export default function App() {
       tipo: formData.tipo.toUpperCase(),
       contrato: formData.contrato.trim().toUpperCase(),
       caixaPosicao: formData.caixaPosicao.trim().toUpperCase(),
+      reclamacao: (formData.reclamacao || '').trim().toUpperCase(),
       sinal: (formData.sinal || '').trim().toUpperCase(),
       pppoe: formData.pppoe.trim(),
       emenda: formData.emenda.trim().toUpperCase(),
@@ -210,6 +217,7 @@ export default function App() {
       tipo: item.tipo,
       contrato: item.contrato,
       caixaPosicao: item.caixaPosicao || '',
+      reclamacao: item.reclamacao || '',
       sinal: item.sinal || '',
       pppoe: item.pppoe || '',
       emenda: item.emenda || '',
