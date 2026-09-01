@@ -381,6 +381,14 @@ app.get('/api/consulta/:contrato', async (req, res) => {
   });
 });
 
+// Verificação de versão da API ativa
+app.get('/api/versao', (req, res) => {
+  res.json({
+    versao: '2.1-smart-fiber',
+    data: new Date().toISOString()
+  });
+});
+
 // Fallback para React Router / SPA em produção
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
